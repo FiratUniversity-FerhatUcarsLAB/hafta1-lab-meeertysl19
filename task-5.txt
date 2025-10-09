@@ -1,4 +1,255 @@
-Öğrenci No:
-AD-SOYAD:
+Öğrenci No:250542017
+AD-SOYAD:İsmet Mert Uysal
 
 Lütfen seçtiğiniz algoritmaya ait çözümü ve diğer isterleri aşağıya ekleyiniz:
+###############################################################################
+# GİRDİLER / PARAMETRELER
+###############################################################################
+Platforms = ["Instagram", "Facebook", "TikTok", "X", "WhatsAppStatus"]   # örnek
+PostingPreferences = {
+    "frequency_per_week": {"Instagram": 4, "Reels": 2, "Stories": 6, "TikTok": 2},
+    "preferred_time_windows": {"Instagram": [(12:00,13:30),(18:30,20:30)], ...}
+}
+BrandVoice = {tone: "samimi, esprili", emojis: ["🌶️","🌯","🔥"], language: "tr"}
+Budget = {ads_monthly: 500, influencer_monthly: 300}
+Constraints = {max_daily_posts: 2, forbidden_topics: [...], legal_disclaimers: [...]}
+InventoryStatus = function getInventory()  # gerçek stok bilgisi (çiğköfte, lavaş, vs.)
+HolidaysCalendar = list of dates with tags (Ramazan, Bayram, Yerel Etkinlik vs.)
+EngagementHistory = historical metrics per platform (time->engagement)
+ApprovalRequired = True/False  # içerik onay süreci
+A_B_Test_Settings = {enabled: True, variants: 2, metric: "engagementRate"}
+MonitoringInterval = 30 minutes  # performans kontrol aralığı
+NegativeCommentThreshold = 5  # kriz eşiği
+###############################################################################
+# ÇIKTILAR
+###############################################################################
+# ContentCalendar: tarih/platform/post tipi/ caption/asset/CTA/scheduled_time
+# Drafts: onay için bekleyen içerik taslakları
+# Reports: performans analizi raporu (haftalık/aylık)
+###############################################################################
+# VERİ YAPILARI
+###############################################################################
+Asset = {id, type: "photo|video|graphic", tags, path, createdAt}
+ContentIdea = {id, theme, productFocus, copyBrief, visualBrief, priority}
+PostDraft = {id, platform, scheduledDateTime, caption, hashtags, assetID, CTA, status}
+PostMetric = {postID, impressions, likes, comments, shares, saves, ctr, engagementRate}
+###############################################################################
+# YARDIMCI FONKSİYONLAR
+###############################################################################
+FUNCTION chooseBestTime(platform, engagementHistory):
+    # Geçmişe bak: en yüksek engagement oranı olan saatleri döndür
+    compute average engagement per hour from engagementHistory[platform]
+    bestSlots = top N time windows where avg engagement is high
+    RETURN bestSlots
+
+FUNCTION selectAssetsForIdea(idea, Assets):
+    candidates = FILTER Assets BY tags match idea.visualBrief AND not used recently
+    IF candidates empty THEN
+        schedulePhotoShoot(idea)  # içerik üretimi talebi oluştur
+        RETURN placeholderAsset
+    RETURN rankCandidatesByQuality(candidates)[0:3]
+
+FUNCTION generateCaption(idea, productDetails, brandVoice, variantID):
+    # template + placeholders + CTA + emoji
+    base = templateFor(idea.theme)  # ex: "Bugün enerjini yükseltecek {product}!"
+    caption = fillPlaceholders(base, productDetails)
+    caption = applyTone(caption, brandVoice.tone)
+    caption = appendCTA(caption, chooseCTA(idea))
+    caption = addEmojis(caption, brandVoice.emojis)
+    IF variantID > 0 THEN mutateCaptionSlightly(caption, variantID)  # A/B için varyasyon
+    RETURN caption
+
+FUNCTION selectHashtags(product, localTags, trendingTags, maxCount=10):
+    tags = topRelevant(product.keywords) + localTags
+    IF trendingTags contains relevant THEN tags += trendingTags[0:2]
+    trim to maxCount
+    RETURN tags
+
+FUNCTION isFeasibleToPost(date, platform, Constraints, InventoryStatus):
+    IF numberOfPostsOn(date) >= Constraints.max_daily_posts RETURN FALSE
+    IF InventoryStatus shows criticalShortage AND postRequiresProduct THEN
+        RETURN FALSE  # stok yoksa promosyon yapılmaz
+    IF date IN HolidaysCalendar with restrictions AND policy forbids THEN RETURN FALSE
+    RETURN TRUE
+
+FUNCTION schedulePostDraft(draft):
+    bestSlots = chooseBestTime(draft.platform, EngagementHistory)
+    pick first slot in preferred_time_windows that matches bestSlots and availability
+    draft.scheduledDateTime = chosenSlot
+    draft.status = "scheduled"
+    save draft to ContentCalendar
+    RETURN draft
+
+FUNCTION publish(postDraft):
+    TRY up to 3 times:
+        call platformAPI.publish(postDraft)  # gerçek uygulamada API çağrısı
+        IF success:
+            postDraft.status = "published"
+            postDraft.publishedAt = now()
+            RETURN True
+    CATCH error:
+        log error
+    postDraft.status = "failed"
+    RETURN False
+
+FUNCTION monitorAndRespond():
+    # sürekli/periodik çalışan süreç
+    FOR each published post in last MonitoringInterval:
+        metrics = fetchMetricsFromPlatform(post)
+        store metrics as PostMetric
+        sentiment = analyzeCommentsSentiment(post.comments)
+        IF sentiment.negative_count >= NegativeCommentThreshold OR negative_ratio high:
+            escalateToManager(post, sentiment)
+            triggerCrisisProtocol(post)
+        ELSE:
+            respondToTopComments(post, sentiment.topQuestions)
+        # A/B test check
+        IF A_B_Test_Settings.enabled AND post.isABTest:
+            analyzeABTestProgress(post)
+    RETURN
+
+FUNCTION analyzeWeeklyPerformance():
+    weeklyPosts = posts in last 7 days
+    compute KPIs: avg_engagement, best_platform, best_time, top_contentThemes
+    IF avg_engagement < target_engagement_threshold:
+        flag = "needs_improvement"
+    generate recommendations:
+        - increase video content if videoEngagement > imageEngagement
+        - shift posting times to best_time
+        - run adBoost for top performing post
+    RETURN report
+
+FUNCTION runABTest(variantA, variantB, metric):
+    # track metric over test period, choose winner if statistically significant
+    collect metrics for both; if winner emerges early, promote winner and stop loserVariant
+    RETURN winner
+
+FUNCTION crisisProtocol(post):
+    # Hızlı adımlar: durdur paylaşım planını, yöneticiyi bilgilendir, resmi açıklama hazırla
+    pauseScheduledSimilarContent()
+    notify(Owner, SocialMediaManager)
+    prepareOfficialReply(template, ownerApproval=True)
+    IF crisisSevere THEN contactPR
+
+###############################################################################
+# ANA AKIŞ
+###############################################################################
+FUNCTION main():
+    # Döngü: sürekli içerik üretim takvimi oluştur ve uygula (haftalık/ günlük)
+    loop forever:
+        # 1. Haftalık içerik beyin fırtınası (tekrar eden işlem - haftada 1)
+        IF today is Monday OR lastIdeaGeneration older than 7 days:
+            ideas = collectIdeasFromSources(menuUpdates, staffIdeas, customerRequests, events, holidays)
+            scoreIdeas(ideas)  # priority, relevance, effortRequired
+            store in ContentPool
+
+        # 2. İçerik taslaklarını üret (günlük/haftalık)
+        desiredWeeklyPosts = PostingPreferences.frequency_per_week per platform
+        FOR each platform IN Platforms:
+            required = desiredWeeklyPosts[platform] - countScheduled(platform, next7days)
+            attempts = 0
+            WHILE required > 0 AND attempts < 20:
+                idea = pickTopIdeaFrom(ContentPool)  # döngü: tekrar eden seçim
+                IF idea isConsumed CONTINUE
+                assets = selectAssetsForIdea(idea, Assets)
+                IF NOT assets.available:
+                    schedulePhotoShoot(idea)
+                    mark idea as pendingAsset
+                    attempts += 1
+                    CONTINUE
+                FOR variant IN 0..(A_B_Test_Settings.variants-1):
+                    caption = generateCaption(idea, idea.productFocus, BrandVoice, variant)
+                    hashtags = selectHashtags(idea.productFocus, localTags(), trendingTags())
+                    draft = PostDraft(platform=platform, caption=caption, hashtags=hashtags,
+                                      assetID=assets.pop(), CTA=chooseCTA(idea), status="draft")
+                    # Koşullu durum: stok kontrol
+                    IF idea.requiresProduct AND InventoryStatus().stockFor(idea.productFocus) < minStockForPromo:
+                        draft.status = "deferred"
+                        log("Stok yetersiz: " + idea.productFocus)
+                        BREAK FOR variant
+                    # Onay Süreci
+                    IF ApprovalRequired:
+                        sendForApproval(draft)
+                        draft.status = "pending_approval"
+                        addToApprovalQueue(draft)
+                    ELSE:
+                        scheduledDraft = schedulePostDraft(draft)  # zaman seçip planlar
+                    required -= 1
+                attempts += 1
+
+        # 3. Onaylandıysa zamanla yayınla (tekrar eden işlem - sık)
+        FOR draft IN approvalQueue where draft.approvedThisCycle:
+            scheduled = schedulePostDraft(draft)
+            move draft from approvalQueue to ContentCalendar
+
+        # 4. Yayın zamanı gelenleri otomatik yayınla
+        for scheduledDraft in ContentCalendar where scheduledDraft.scheduledDateTime <= now() AND status == "scheduled":
+            success = publish(scheduledDraft)
+            IF success:
+                notifyTeam("Published: " + scheduledDraft.id)
+            ELSE:
+                retryLater(scheduledDraft)
+
+        # 5. Sürekli performans izle (tekrar eden - her MonitoringInterval)
+        IF now() - lastMonitorRun >= MonitoringInterval:
+            monitorAndRespond()
+            lastMonitorRun = now()
+
+        # 6. Haftalık/aylık analiz & öğrenme (tekrar eden - haftalık/aylık)
+        IF today is Sunday OR lastWeeklyAnalysis older than 7 days:
+            report = analyzeWeeklyPerformance()
+            applyRecommendations(report)  # örn. değiştir preferred_time_windows, content mix
+            archiveReport(report)
+
+        # 7. İçerik havuzunu yeniden doldur (tekrar eden)
+        IF ContentPool.size < minPoolSize:
+            triggerIdeaGeneration()  # mini-brief oluştur, çalışanlara çağrı gönder
+
+        # 8. Bekle / uyku (günlük küçük uyku)
+        sleep(1 hour)  # ana döngünün çok sık dönmesini engeller
+
+###############################################################################
+# EK SENARYOLAR / KOŞULLU DURUMLAR
+###############################################################################
+# - Kampanya Başlatma:
+IF marketingTeam.requestsCampaign AND Budget.ads_monthly >= campaign.cost:
+    createCampaignPlan(campaignBrief)
+    allocateAdBudget(campaign)
+    boostTopPosts(campaign.selectedPosts)
+
+# - Influencer işbirliği:
+FOR influencer IN influencerList:
+    IF influencer.availableDate in targetWindow AND influencer.fee <= Budget.influencer_monthly:
+        proposeCollab(influencer, brief)
+        IF accepted:
+            schedule influencer post + cross-promo
+
+# - Acil stok bitimi:
+IF InventoryStatus().criticalItems contains mainProduct:
+    pauseScheduledPromosFor(mainProduct)
+    postStoreNotice("Bugün {mainProduct} stokta yok — üzgünüz! Yarın tekrar...")
+
+# - Negatif yorum / kriz:
+IF negative_comment_count(post) >= NegativeCommentThreshold:
+    crisisProtocol(post)
+
+###############################################################################
+# ÖRNEK POST ŞABLONU (örnek çıktılar)
+###############################################################################
+# PostDraft example:
+# platform: Instagram
+# scheduledDateTime: 2025-10-11 19:00
+# caption: "Akşamların vazgeçilmezi! 🔥 Ev yapımı çiğköfte + lavaş, sadece 35₺. Bugün alana ayran %50 indirim! 🌶️ Sipariş: 0(555)123-45-67"
+# hashtags: ["#çiğköfte","#yerelisim","#akşamkeyfi","#evyapımı"]
+# assetID: photo_2025_10_01_01
+# CTA: "Sipariş Ver" (link veya telefon)
+
+###############################################################################
+# NOTLAR / İYİ UYGULAMALAR
+###############################################################################
+# - Otomasyon ile yine de insan onayı koy: kriz, kampanya veya yasal içeriklerde insan onayı zorunlu olsun.
+# - A/B testleriyle hangi başlık/video türünün daha iyi olduğunu öğren; kazananı sonrasında tüm postlarda kullan.
+# - Hikayeler ve Reels için daha kısa vardiya ile sık ve deneysel içerik üret; Reels/TikTok genelde daha yüksek etkileşim verir.
+# - Yerel etiketler ve güncel etkinlikleri (ör. festival, maç) içeriklere adapte et.
+# - Müşteri yorumlarını ve sık sorulan soruları (SSS) düzenli olarak cevapla; bu içerikler hem etkileşim artırır hem güven oluşturur.
+###############################################################################

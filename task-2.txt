@@ -1,4 +1,215 @@
-Öğrenci No:
-AD-SOYAD:
+Öğrenci No:250542017
+AD-SOYAD:İsmet Mert Uysal
 
 Lütfen seçtiğiniz algoritmaya ait çözümü ve diğer isterleri aşağıya ekleyiniz:
+# ---------- VERI YAPILARI ----------
+STRUCT Property:
+    id
+    name
+    type            # "color", "railroad", "utility", "tax", "chance", ...
+    colorGroup
+    price
+    houseCost
+    rentLevels[]    # [noHouse, 1house, 2house, 3house, 4house, hotel]
+    owner           # playerID or null
+    houses
+    mortgaged       # bool
+
+STRUCT Player:
+    id
+    name
+    cash
+    position
+    properties[]    # list of Property ids
+    inJail
+    jailTurns
+    getOutOfJailCards
+    isBankrupt
+
+STRUCT GameState:
+    players[]       # list of Player
+    board[]         # list of Property / squares
+    currentPlayerID
+    houseSupply     # remaining houses in bank
+    hotelSupply
+    turnNumber
+    history         # optional for simulation
+
+# ---------- PARAMETRELER ----------
+PARAM riskTolerance      # 0 (çok muhafazakar) .. 1 (çok agresif)
+PARAM planningHorizon   # kaç tur ötesine bakılacağı (ör. 10)
+PARAM simulations       # Monte Carlo simülasyon sayısı (0 = devre dışı)
+
+# ---------- YARDIMCI FONKSIYONLAR ----------
+FUNCTION getLegalActions(player, state) RETURNS list of Action:
+    actions = []
+    # 1) Zorunlu: zar at (bu devam edilecek ama önce satın alma kararı gelebilir)
+    actions.ADD(Action("RollDice"))
+    # 2) Eğer kesilmeyecekse: eğer teklifler (trade) varsa değerlendirme seçenekleri
+    FOR offer IN incomingTradeOffersFor(player, state):
+        actions.ADD(Action("AcceptTrade", offer))
+        actions.ADD(Action("DeclineTrade", offer))
+        actions.ADD(Action("CounterTrade", proposeCounter(offer)))
+    # 3) Satın alma hakkı varsa (landed on unowned property and before auction):
+    IF player.position lands on property p AND p.owner == null:
+        IF player.cash >= p.price:
+            actions.ADD(Action("BuyProperty", p.id))
+        actions.ADD(Action("DeclineBuy", p.id))  # leads to auction
+    # 4) İnşa seçenekleri
+    FOR colorGroup IN player.ownedColorGroups(state):
+        FOR property p IN colorGroup.properties:
+            IF canBuildHouseOn(p, state) AND player.cash >= p.houseCost:
+                actions.ADD(Action("BuildHouse", p.id))
+    # 5) Mortgage / unmortgage options
+    FOR p IN player.properties:
+        IF NOT p.mortgaged:
+            actions.ADD(Action("Mortgage", p.id))
+        ELSE IF player.cash >= unmortgageCost(p):
+            actions.ADD(Action("Unmortgage", p.id))
+    # 6) Jail options
+    IF player.inJail:
+        actions.ADD(Action("AttemptRollDoubles"))
+        IF player.cash >= 50:
+            actions.ADD(Action("PayFineToGetOut"))
+        IF player.getOutOfJailCards > 0:
+            actions.ADD(Action("UseGetOutCard"))
+    # 7) EndTurn is implicit after all forced sub-actions are resolved
+    RETURN actions
+
+FUNCTION simulateOutcome(state, action, horizon, rng) RETURNS numeric utility:
+    # Basit Monte Carlo: action uygulanır, rastgele rakip eylemleri ve zarlar simüle edilir
+    clone = deepcopy(state)
+    applyAction(clone, action)
+    FOR t FROM 1 TO horizon:
+        current = clone.currentPlayerID
+        # Basit model: rakipler rasgele veya heuristik oynar (kısaca: random legal action)
+        FOR each player in turn order:
+            legal = getLegalActions(player, clone)
+            chosen = samplePolicy(player, legal, clone, rng) # basit rastgele/heuristic
+            applyAction(clone, chosen)
+            IF isGameOver(clone): BREAK ALL
+    RETURN evaluateStateUtilityForActor(clone, originalActorID)
+
+FUNCTION expectedLandingProbability(fromPos, toPos, turns) RETURNS prob:
+    # Yaklaşık: tek tur için dice dağılımını kullan (2..12)
+    # Daha doğru istersen Markov zinciri kur
+    # Basit yaklaşık örnek:
+    dist = (toPos - fromPos) mod boardSize
+    # tek zarlama olasılığı (2..12) knownDistribution
+    probOneTurn = sum_{s where s == dist} P(diceSum = s)
+    # approx multi-turn probability over 'turns' ≈ 1 - (1 - probOneTurn)^turns (kabaca)
+    RETURN 1 - (1 - probOneTurn)^turns
+
+FUNCTION evaluateImmediateEV_BuyProperty(player, p, state, horizon):
+    # Ortalama beklenen kira geliri - maliyet (basit)
+    totalProb = expectedLandingProbabilityForAllOpponents(player.position, p.position, horizon)
+    avgRentIfBuilt = estimateAvgRent(p, player)  # ort. kira, eğer ev yapılırsa artar
+    expectedIncome = totalProb * avgRentIfBuilt * (horizon / averageCycleLength)
+    # account for improvement potential and monopoly bonus
+    monopolyBonus = 0
+    IF completingThisGivesMonopoly(player, p, state):
+        monopolyBonus = HIGH_VALUE_FACTOR
+    # amortize purchase cost
+    amortizedCost = p.price
+    # risk adjusted
+    score = (expectedIncome + monopolyBonus) - amortizedCost * riskAdjustedFactor(riskTolerance)
+    RETURN score
+
+# ---------- HAMLE DEĞERLENDİRME ---------- 
+FUNCTION evaluateAction(action, state) RETURNS score:
+    actor = state.players[state.currentPlayerID]
+    baseScore = 0
+
+    SWITCH action.type:
+        CASE "BuyProperty":
+            p = state.board[action.propertyID]
+            baseScore = evaluateImmediateEV_BuyProperty(actor, p, state, planningHorizon)
+            IF simulations > 0:
+                simAvg = average( FOR i IN 1..simulations: simulateOutcome(state, action, planningHorizon, rng_i) )
+                baseScore = blend(baseScore, simAvg, weight=0.5)  # heuristik + sim
+            # prefer completes-monopoly strongly
+            IF completingThisGivesMonopoly(actor, p, state):
+                baseScore += 10000
+            # likeliness to be auctioned -> adjust bid strategy elsewhere
+        CASE "DeclineBuy":
+            # if decline leads to auction, we should estimate auctionStrategy; keep neutral
+            baseScore = -10
+        CASE "BuildHouse":
+            p = state.board[action.propertyID]
+            # ROI = expected incremental rent gain / houseCost
+            incrementalRent = estimateIncrementalRentAfterHouse(p, actor, state, planningHorizon)
+            roi = incrementalRent / p.houseCost
+            # give bonus if keeps monopoly and balances houses across color group
+            balanceFactor = balanceHousesInGroup(p.colorGroup, actor, state)
+            baseScore = roi * 100 * balanceFactor
+        CASE "Mortgage":
+            p = state.board[action.propertyID]
+            # Emergency action: preserve cash to avoid bankruptcy
+            baseScore = emergencyMortgageScore(actor, p, state)
+        CASE "AcceptTrade", "CounterTrade", "DeclineTrade":
+            # Evaluate by post-trade expected utility difference
+            postTradeState = applyTradeHypothetically(state, action)
+            baseScore = evaluateStateUtilityForActor(postTradeState, actor.id)
+        CASE "AttemptRollDoubles", "PayFineToGetOut", "UseGetOutCard":
+            baseScore = evaluateJailDecision(actor, action, state, planningHorizon)
+        CASE "RollDice":
+            baseScore = 0  # not a decision unless we consider choices after roll
+        DEFAULT:
+            baseScore = heuristicDefault(action, state)
+
+    # Apply risk tolerance and cash constraints
+    IF actor.cash < criticalCashThreshold(state):
+        baseScore -= (criticalCashThreshold(state) - actor.cash) * 10  # risk of bankruptcy
+    RETURN baseScore
+
+# ---------- ANA DÖNGÜ (AI TURN) ----------
+FUNCTION chooseBestActionForCurrentPlayer(state) RETURNS Action:
+    actor = state.players[state.currentPlayerID]
+    legal = getLegalActions(actor, state)
+    bestAction = null
+    bestScore = -INF
+    FOR action IN legal:
+        score = evaluateAction(action, state)
+        # tie-breaker: agresif oyuncu harcar, muhafazakar oyuncu tasarruf eder
+        IF score > bestScore OR (score == bestScore AND tieBreak(actor, action, bestAction, state)):
+            bestScore = score
+            bestAction = action
+    RETURN bestAction
+
+# ---------- OYUN SIMÜLASYONU ÖRNEĞİ (kullanımdışı ama faydalı) ----------
+WHILE not isGameOver(state):
+    current = state.players[state.currentPlayerID]
+    IF current.isAIControlled:
+        action = chooseBestActionForCurrentPlayer(state)
+        applyAction(state, action)
+    ELSE:
+        # gerçek oyuncu; bu algoritma insan için hamle önerisi de verebilir
+        suggested = chooseBestActionForCurrentPlayer(state)
+        DISPLAY suggestion to human
+        WAIT for human action or auto-apply suggested
+    state = advanceTurn(state)
+ENDWHILE
+
+# ---------- EK FONKSİYONLAR (kısa tanım) ----------
+FUNCTION completingThisGivesMonopoly(player, property, state) RETURNS bool
+FUNCTION estimateAvgRent(property, owner) RETURNS numeric
+FUNCTION expectedLandingProbabilityForAllOpponents(fromPos, toPos, horizon) RETURNS numeric
+FUNCTION canBuildHouseOn(property, state) RETURNS bool
+FUNCTION unmortgageCost(property) RETURNS numeric
+FUNCTION emergencyMortgageScore(player, property, state) RETURNS numeric
+FUNCTION evaluateStateUtilityForActor(state, actorID) RETURNS numeric
+FUNCTION tieBreak(actor, actionA, actionB, state) RETURNS bool
+FUNCTION applyAction(state, action)   # oyun kurallarına uygun state mutasyonu
+FUNCTION applyTradeHypothetically(state, tradeAction) RETURNS newState
+
+# ---------- NOTLAR & İyileştirme Önerileri ----------
+# - "estimateAvgRent" ve "expectedLandingProbability" fonksiyonlarını ne kadar doğru yaparsanız
+#   AI o kadar iyi olur. Basit dice-distribution + Markov zinciri ile iyi sonuç alırsınız.
+# - Monte Carlo simülasyonları (simulateOutcome) ile kararları doğrulayın; sim sayısı arttıkça
+#   doğruluk artar ama hesap maliyeti yükselir.
+# - Trade değerlendirmesi: sadece parasal EV değil, rakiplerin güçlenmesine/ zayıflamasına da bak.
+# - Ev inşa stratejisi: genel meta "3-house stratejisi" (3 ev = çok etkili) algısı algoritmaya yansıtılabilir.
+# - Jail kararı: erken oyunda çıkıp mülk almak; geç oyunda (rakiplerin çok evi varken) hapiste kalmak mantıklı.
+# - Açık artırma (auction) stratejisi: maksimum teklif = min ( beklenen getirinin bugünkü değeri, bütçeLimit )
+# - İpoteklemelerde önce ROI'si düşük, tek tek sahip olunan (monopoly kırmayan) mülkleri seç.
+

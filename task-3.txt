@@ -1,4 +1,47 @@
-Öğrenci No:
-AD-SOYAD:
+Öğrenci No:250542017
+AD-SOYAD:İsmet Mert Uysal
 
 Lütfen seçtiğiniz algoritmaya ait çözümü ve diğer isterleri aşağıya ekleyiniz:
+ALGORITMA TelefonRehberini_Alfabetik_Sirala
+
+GİRİŞ:
+    rehber[]    # Kişi listesi (isim + telefon)
+
+BAŞLA
+
+1. n ← UZUNLUK(rehber)
+2. EĞER n ≤ 1 İSE
+       YAZ "Rehber zaten sıralı veya boş."
+       ÇIK
+   SON
+
+3. YAZ "Sıralama işlemi başlatıldı..."
+
+4. # Dış döngü: tüm elemanları sırayla kontrol et
+   FOR i ← 0 → n-2 YAP
+        # İç döngü: her elemanı bir sonrakisiyle karşılaştır
+        FOR j ← 0 → n-2-i YAP
+
+            # İsimleri alfabetik karşılaştır
+            EĞER rehber[j].isim > rehber[j+1].isim İSE
+                # Yer değiştirme işlemi (swap)
+                GEÇİCİ ← rehber[j]
+                rehber[j] ← rehber[j+1]
+                rehber[j+1] ← GEÇİCİ
+            SON
+
+        SON
+
+        # Her dış döngü sonunda ilerleme bildir
+        YAZ "Adım " + (i+1) + ": " + i + " eleman yerinde."
+
+   SON
+
+5. YAZ "Sıralama tamamlandı!"
+
+6. YAZ "Alfabetik sıraya göre rehber:"
+   FOR k ← 0 → n-1 YAP
+       YAZ rehber[k].isim + " - " + rehber[k].telefon
+   SON
+
+BİTİR

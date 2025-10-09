@@ -1,4 +1,180 @@
-Öğrenci No:
-AD-SOYAD:
+Öğrenci No:250542017
+AD-SOYAD:İsmet Mert Uysal
 
 Lütfen seçtiğiniz algoritmaya ait çözümü ve diğer isterleri aşağıya ekleyiniz:
+ALGORITMA Otobus_Rotasi_Optimizasyonu
+
+GİRİŞ:
+    Stops[]          # Her durak: {id, x, y, demand, timeWindow, serviceTime, priority}
+    Depot            # Başlangıç ve bitiş noktası: {x, y}
+    Fleet[]          # Araç listesi: {id, capacity, startTime, endTime, fixedCost, variableCost}
+    travelTime[][]   # Duraklar arası süre matrisi
+    travelDist[][]   # Duraklar arası mesafe matrisi
+    maxIter          # Maksimum iyileştirme iterasyonu
+    improvementTol   # Kabul edilebilir iyileşme eşiği
+    objective        # Hedef: minimum mesafe / maliyet
+    constraints      # Kapasite, süre, zaman aralığı vb.
+
+ÇIKIŞ:
+    Routes[]         # Her araç için durak sırası listesi
+    totalCost        # Toplam rota maliyeti
+
+BAŞLA:
+
+----------------------------------------------------------------
+# 1. BAŞLANGIÇ: Her durak için tek araçlı rota oluştur
+----------------------------------------------------------------
+1. Routes ← boş liste
+2. FOR her durak s IN Stops DO
+       yeniRota ← [s]
+       Routes’EKLE(yeniRota)
+   SON
+
+----------------------------------------------------------------
+# 2. TASARRUF (SAVINGS) DEĞERLERİNİ HESAPLA
+----------------------------------------------------------------
+3. SavingsList ← boş liste
+4. FOR her durak çifti (i, j), i ≠ j DO
+       saving ← travelDist[Depot][i] + travelDist[Depot][j] - travelDist[i][j]
+       SavingsList’EKLE((i, j, saving))
+   SON
+5. SavingsList’i saving’e göre AZALAN sırada sırala
+
+----------------------------------------------------------------
+# 3. ROTALARI BİRLEŞTİR (MERGE) – GREEDY TASARRUF YÖNTEMİ
+----------------------------------------------------------------
+6. FOR her (i, j, saving) IN SavingsList DO
+       route_i ← i’yi içeren rota
+       route_j ← j’yi içeren rota
+
+       EĞER route_i ≠ route_j İSE
+           mergedRoute ← route_i ve route_j’yı uygun uçlardan birleştir
+
+           EĞER isFeasible(mergedRoute, constraints) İSE
+               Routes’DAN route_i ve route_j’yi kaldır
+               Routes’EKLE(mergedRoute)
+           SON
+       SON
+   SON
+
+----------------------------------------------------------------
+# 4. İLK ÇÖZÜMÜN MALİYETİNİ HESAPLA
+----------------------------------------------------------------
+7. totalCost ← 0
+8. FOR her route IN Routes DO
+       totalCost ← totalCost + computeRouteCost(route)
+   SON
+
+----------------------------------------------------------------
+# 5. YEREL ARAMA (LOCAL SEARCH) İYİLEŞTİRMESİ
+----------------------------------------------------------------
+9. bestRoutes ← Routes
+10. bestCost ← totalCost
+11. iter ← 0
+12. improved ← TRUE
+
+13. WHILE iter < maxIter VE improved = TRUE YAP
+        improved ← FALSE
+        iter ← iter + 1
+
+        ------------------------------------------------------------
+        # 5.1 2-OPT: Aynı rota içinde bağlantı değiştir
+        ------------------------------------------------------------
+        FOR her route IN bestRoutes DO
+            FOR i ← 1 → length(route)-2 DO
+                FOR j ← i+1 → length(route)-1 DO
+                    newRoute ← iki_durak_arası_2opt_değiştir(route, i, j)
+                    EĞER isFeasible(newRoute, constraints) İSE
+                        newCost ← computeRouteCost(newRoute)
+                        EĞER newCost < bestCost - improvementTol İSE
+                            bestRoutes ← replaceRoute(bestRoutes, route, newRoute)
+                            bestCost ← newCost
+                            improved ← TRUE
+                        SON
+                    SON
+                SON
+            SON
+        SON
+
+        ------------------------------------------------------------
+        # 5.2 RELOCATE: Bir durak başka rotaya taşınsın
+        ------------------------------------------------------------
+        FOR her rota çifti (A, B) IN bestRoutes DO
+            FOR her durak s IN A DO
+                FOR pozisyon p ← 0 → uzunluk(B) DO
+                    candidateA ← A - s
+                    candidateB ← B’ye s’yi p konumuna ekle
+                    EĞER isFeasible(candidateA) VE isFeasible(candidateB) İSE
+                        newRoutes ← replace(A,B) ile oluştur
+                        newCost ← computeTotalCost(newRoutes)
+                        EĞER newCost < bestCost - improvementTol İSE
+                            bestRoutes ← newRoutes
+                            bestCost ← newCost
+                            improved ← TRUE
+                        SON
+                    SON
+                SON
+            SON
+        SON
+
+        ------------------------------------------------------------
+        # 5.3 SWAP: İki farklı rotadaki duraklar yer değiştirsin
+        ------------------------------------------------------------
+        FOR her rota çifti (R1, R2) IN bestRoutes DO
+            FOR her durak s1 IN R1 DO
+                FOR her durak s2 IN R2 DO
+                    swappedR1 ← R1’de s1 yerine s2
+                    swappedR2 ← R2’de s2 yerine s1
+                    EĞER isFeasible(swappedR1) VE isFeasible(swappedR2) İSE
+                        newRoutes ← bu iki yeni rotayla oluştur
+                        newCost ← computeTotalCost(newRoutes)
+                        EĞER newCost < bestCost - improvementTol İSE
+                            bestRoutes ← newRoutes
+                            bestCost ← newCost
+                            improved ← TRUE
+                        SON
+                    SON
+                SON
+            SON
+        SON
+   SON  # WHILE biter
+
+----------------------------------------------------------------
+# 6. SONUÇ
+----------------------------------------------------------------
+14. YAZ "Optimizasyon tamamlandı!"
+15. YAZ "Toplam rota maliyeti: " + bestCost
+16. DÖNDÜR bestRoutes, bestCost
+
+BİTİR
+
+
+----------------------------------------------------------------
+# Yardımcı Fonksiyonlar
+----------------------------------------------------------------
+FONKSİYON isFeasible(route, constraints):
+    kapasite ← 0
+    zaman ← Fleet.startTime
+    prev ← Depot
+    FOR her durak s IN route DO
+        kapasite ← kapasite + s.demand
+        EĞER kapasite > Fleet.capacity İSE DÖN FALSE
+        arrival ← zaman + travelTime[prev][s]
+        EĞER arrival > s.timeWindow.latest İSE DÖN FALSE
+        zaman ← max(arrival, s.timeWindow.earliest) + s.serviceTime
+        prev ← s
+    SON
+    EĞER zaman + travelTime[prev][Depot] > Fleet.endTime İSE DÖN FALSE
+    DÖN TRUE
+
+FONKSİYON computeRouteCost(route):
+    dist ← 0
+    prev ← Depot
+    FOR her s IN route DO
+        dist ← dist + travelDist[prev][s]
+        prev ← s
+    SON
+    dist ← dist + travelDist[prev][Depot]
+    cost ← dist * Fleet.variableCost + Fleet.fixedCost
+    DÖN cost
+
